@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+# Poids des modèles et audios : jamais dans l'image (volume Docker à la place).
+models/
+audio/

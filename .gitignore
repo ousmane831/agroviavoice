@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# Poids des modèles (plusieurs Go) : on les télécharge, on ne les versionne pas.
+models/
+
+# Fichiers audio temporaires et générés (dossiers créés automatiquement)
+audio/
