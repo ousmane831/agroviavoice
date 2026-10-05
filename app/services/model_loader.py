@@ -1,86 +1,236 @@
 """
-Chargement des modèles IA (ASR et TTS).
+Communication avec l'API Kiriku distante.
 
-Grâce à @lru_cache, chaque modèle n'est chargé qu'UNE SEULE FOIS en mémoire
-(Singleton) : le premier appel charge le modèle, les appels suivants
-réutilisent directement le modèle déjà en mémoire.
+Les modèles ASR et TTS ne sont plus téléchargés localement.
+Ils tournent sur le GPU RTX 4090 du concours.
+
+Interface conservée pour le reste de l'application :
+- transcrire_audio(echantillons, langue)
+- synthetiser_texte(texte, langue)
 """
 
-from functools import lru_cache
-from pathlib import Path
+import io
+import wave
 
-from huggingface_hub import snapshot_download
-from transformers import pipeline
-from TTS.api import TTS
+import numpy as np
+from openai import OpenAI
 
-from app.core.config import MODELES_ASR, MODELES_TTS, reglages
+from app.core.config import reglages
 from app.core.languages import verifier_langue_asr, verifier_langue_tts
 
 
-@lru_cache()
-def charger_modele_asr(nom_modele: str):
-    """
-    Charge un modèle Whisper Kiriku (audio -> texte) une seule fois.
-    Pulaar et Sérère utilisent le même modèle (M-Kiriku-ASR) :
-    il n'est donc chargé qu'une fois pour les deux langues.
-    """
-    transcripteur = pipeline(
-        "automatic-speech-recognition",
-        model=nom_modele,
-        token=reglages.hf_token,
-        model_kwargs={"cache_dir": reglages.dossier_modeles},
+def obtenir_client_kiriku() -> OpenAI:
+    """Crée le client OpenAI configuré pour l'API Kiriku."""
+    if not reglages.kiriku_api_key:
+        raise RuntimeError(
+            "KIRIKU_API_KEY n'est pas configurée dans le fichier .env."
+        )
+
+    return OpenAI(
+        api_key=reglages.kiriku_api_key,
+        base_url=reglages.kiriku_api_url,
+        timeout=120.0,
     )
-    return transcripteur
 
 
-@lru_cache()
-def charger_modele_tts(nom_modele: str):
-    """Charge un modèle VITS Kiriku (texte -> audio) une seule fois."""
-    # Télécharge les fichiers du modèle dans le dossier models/
-    dossier_modele = Path(
-        snapshot_download(nom_modele, cache_dir=reglages.dossier_modeles, token=reglages.hf_token)
-    )
-    chemin_modele = next(dossier_modele.glob("*.pth"))
-    chemin_config = dossier_modele / "config.json"
+def convertir_echantillons_en_wav(echantillons, frequence: int = 16000) -> bytes:
+    """
+    Convertit les échantillons audio numpy en fichier WAV en mémoire.
 
-    synthetiseur = TTS(model_path=str(chemin_modele), config_path=str(chemin_config))
-    return synthetiseur
+    L'API Kiriku ASR accepte les fichiers audio.
+    """
+    echantillons = np.asarray(echantillons, dtype=np.float32)
 
+    # Limiter les valeurs dans l'intervalle audio standard.
+    echantillons = np.clip(echantillons, -1.0, 1.0)
 
-def obtenir_modele_asr(langue: str):
-    """Retourne le modèle ASR de la langue demandée (wolof, pulaar...)."""
-    code_langue = verifier_langue_asr(langue)
-    nom_modele = MODELES_ASR[code_langue]["nom_modele"]
-    return charger_modele_asr(nom_modele)
+    # Conversion float32 -> PCM 16 bits.
+    pcm = (echantillons * 32767).astype(np.int16)
 
+    buffer = io.BytesIO()
 
-def obtenir_modele_tts(langue: str):
-    """Retourne le modèle TTS de la langue demandée (wolof, pulaar)."""
-    code_langue = verifier_langue_tts(langue)
-    nom_modele = MODELES_TTS[code_langue]
-    return charger_modele_tts(nom_modele)
+    with wave.open(buffer, "wb") as fichier_wav:
+        fichier_wav.setnchannels(1)
+        fichier_wav.setsampwidth(2)
+        fichier_wav.setframerate(frequence)
+        fichier_wav.writeframes(pcm.tobytes())
+
+    buffer.seek(0)
+    return buffer.read()
 
 
 def transcrire_audio(echantillons, langue: str) -> str:
-    """Transforme l'audio (16 kHz) en texte."""
-    transcripteur = obtenir_modele_asr(langue)
+    """
+    Transforme l'audio en texte avec l'API Kiriku distante.
 
-    # M-Kiriku-ASR a besoin du token de la langue (ex. "<|pu|>")
-    options = {"task": "transcribe"}
-    token_langue = MODELES_ASR[langue]["token_langue"]
-    if token_langue:
-        options["language"] = token_langue
+    Langues ASR :
+    - wolof
+    - pulaar
+    - serer
+    """
+    code_langue = verifier_langue_asr(langue)
 
-    resultat = transcripteur(
-        {"raw": echantillons, "sampling_rate": 16000},
-        generate_kwargs=options,
+    audio_wav = convertir_echantillons_en_wav(
+        echantillons,
+        frequence=16000,
     )
-    return resultat["text"].strip()
+
+    client = obtenir_client_kiriku()
+
+    fichier_audio = io.BytesIO(audio_wav)
+    fichier_audio.name = "audio.wav"
+
+    resultat = client.audio.transcriptions.create(
+        model="m-kiriku-asr",
+        file=fichier_audio,
+        language=code_langue,
+        response_format="json",
+    )
+
+    return resultat.text.strip()
 
 
 def synthetiser_texte(texte: str, langue: str):
-    """Transforme le texte en audio. Retourne (echantillons, frequence)."""
-    synthetiseur = obtenir_modele_tts(langue)
-    echantillons = synthetiseur.tts(texte)
-    frequence = synthetiseur.synthesizer.output_sample_rate
+    """
+    Transforme le texte en audio WAV avec l'API Kiriku.
+
+    L'API limite chaque requête TTS à 512 caractères.
+    Si le texte est plus long, il est découpé en plusieurs morceaux,
+    puis les audios sont concaténés.
+
+    Langues TTS :
+    - wolof
+    - pulaar
+
+    Retourne :
+        (echantillons, frequence)
+    """
+    code_langue = verifier_langue_tts(langue)
+
+    if not texte or not texte.strip():
+        raise ValueError("Le texte à synthétiser est vide.")
+
+    client = obtenir_client_kiriku()
+
+    # Découpage en morceaux de maximum 512 caractères.
+    morceaux = []
+
+    texte_restant = texte.strip()
+
+    while len(texte_restant) > 512:
+        position = texte_restant.rfind(" ", 0, 512)
+
+        if position <= 0:
+            position = 512
+
+        morceaux.append(texte_restant[:position].strip())
+        texte_restant = texte_restant[position:].strip()
+
+    if texte_restant:
+        morceaux.append(texte_restant)
+
+    tous_les_echantillons = []
+    frequence = None
+
+    for morceau in morceaux:
+        resultat = client.audio.speech.create(
+            model="kiriku-tts",
+            voice=code_langue,
+            input=morceau,
+        )
+
+        audio_wav = resultat.read()
+
+        with wave.open(io.BytesIO(audio_wav), "rb") as fichier_wav:
+            frequence_morceau = fichier_wav.getframerate()
+            nombre_canaux = fichier_wav.getnchannels()
+            largeur_echantillon = fichier_wav.getsampwidth()
+            frames = fichier_wav.readframes(fichier_wav.getnframes())
+
+        if largeur_echantillon == 2:
+            echantillons = (
+                np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+            )
+            echantillons /= 32768.0
+
+        elif largeur_echantillon == 1:
+            echantillons = (
+                np.frombuffer(frames, dtype=np.uint8).astype(np.float32)
+            )
+            echantillons = (echantillons - 128) / 128.0
+
+        else:
+            raise ValueError(
+                f"Format WAV TTS non supporté : "
+                f"{largeur_echantillon} octets par échantillon."
+            )
+
+        if nombre_canaux > 1:
+            echantillons = echantillons.reshape(
+                -1,
+                nombre_canaux,
+            ).mean(axis=1)
+
+        if frequence is None:
+            frequence = frequence_morceau
+        elif frequence != frequence_morceau:
+            raise ValueError(
+                "Les morceaux audio ont des fréquences différentes."
+            )
+
+        tous_les_echantillons.append(echantillons)
+
+    echantillons_finaux = np.concatenate(tous_les_echantillons)
+
+    return echantillons_finaux, frequence
+    """
+    Transforme le texte en audio WAV avec l'API Kiriku.
+
+    Langues TTS :
+    - wolof
+    - pulaar
+
+    Retourne :
+        (echantillons, frequence)
+    """
+    code_langue = verifier_langue_tts(langue)
+
+    # L'API Kiriku limite une requête TTS à 512 caractères.
+    if len(texte) > 512:
+        raise ValueError(
+            "Le texte dépasse la limite de 512 caractères de l'API Kiriku."
+        )
+
+    client = obtenir_client_kiriku()
+
+    resultat = client.audio.speech.create(
+        model="kiriku-tts",
+        voice=code_langue,
+        input=texte,
+    )
+
+    audio_wav = resultat.read()
+
+    with wave.open(io.BytesIO(audio_wav), "rb") as fichier_wav:
+        frequence = fichier_wav.getframerate()
+        nombre_canaux = fichier_wav.getnchannels()
+        largeur_echantillon = fichier_wav.getsampwidth()
+        frames = fichier_wav.readframes(fichier_wav.getnframes())
+
+    # Conversion PCM -> numpy float32.
+    if largeur_echantillon == 2:
+        echantillons = np.frombuffer(frames, dtype=np.int16).astype(np.float32)
+        echantillons /= 32768.0
+    elif largeur_echantillon == 1:
+        echantillons = np.frombuffer(frames, dtype=np.uint8).astype(np.float32)
+        echantillons = (echantillons - 128) / 128.0
+    else:
+        raise ValueError(
+            f"Format WAV TTS non supporté : {largeur_echantillon} octets par échantillon."
+        )
+
+    # Si jamais le WAV contient plusieurs canaux, on les mélange en mono.
+    if nombre_canaux > 1:
+        echantillons = echantillons.reshape(-1, nombre_canaux).mean(axis=1)
+
     return echantillons, frequence

@@ -1,0 +1,28 @@
+# torch en version CPU (beaucoup plus légère que la version GPU, ~200 Mo au lieu de ~2 Go)
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+# --- API web ---
+fastapi==0.115.6
+uvicorn==0.34.0
+python-multipart==0.0.20
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# --- Audio ---
+soundfile==0.12.1
+# numpy 1.24.3 : version imposée par TTS 0.19.0
+numpy==1.24.3
+
+# --- Modèles IA ---
+torch==2.4.1
+torchaudio==2.4.1
+# ASR : modèles Whisper Kiriku (version imposée par TTS 0.19.0)
+transformers==4.33.3
+# Téléchargement des modèles depuis Hugging Face
+huggingface_hub==0.26.5
+# TTS : modèles VITS Kiriku (Coqui TTS 0.19.0 exige Python 3.11)
+TTS==0.19.0
+
+# --- Tests ---
+pytest==8.3.4
+httpx==0.28.1

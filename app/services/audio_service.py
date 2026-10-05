@@ -14,7 +14,7 @@ import soundfile as sf
 
 from app.core.config import reglages
 from app.core.errors import ErreurApp
-
+CHEMIN_FFMPEG = r"C:\Users\HP ELITEBOOK G6\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build-shared\bin\ffmpeg.exe"
 # .ogg : format des notes vocales WhatsApp, très utilisé par les agriculteurs.
 # .webm : format enregistré par le micro du navigateur (Chrome, Firefox).
 EXTENSIONS_AUTORISEES = [".wav", ".mp3", ".m4a", ".ogg", ".webm"]
@@ -65,12 +65,15 @@ def convertir_audio(chemin_entree: Path) -> Path:
     """Convertit n'importe quel format accepté en WAV mono 16 kHz avec ffmpeg."""
     chemin_sortie = chemin_entree.with_name(f"{chemin_entree.stem}_converti.wav")
     commande = [
-        "ffmpeg", "-y", "-loglevel", "error",
-        "-i", str(chemin_entree),
-        "-ac", "1",                   # mono
-        "-ar", str(FREQUENCE_ASR),    # 16 kHz
-        str(chemin_sortie),
-    ]
+    CHEMIN_FFMPEG,
+    "-y",
+    "-loglevel",
+    "error",
+    "-i", str(chemin_entree),
+    "-ac", "1",
+    "-ar", str(FREQUENCE_ASR),
+    str(chemin_sortie),
+]
     try:
         resultat = subprocess.run(commande, capture_output=True, text=True, timeout=60)
     except FileNotFoundError:

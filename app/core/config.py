@@ -1,15 +1,17 @@
+
 """
 Configuration centrale du service.
 
-Les réglages viennent du fichier `.env` (sinon, les valeurs par défaut ci-dessous).
-Les noms des modèles Hugging Face sont définis UNIQUEMENT ici.
+Les réglages viennent du fichier `.env`.
+Les modèles Kiriku sont utilisés via l'API distante du concours.
 """
 
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-# Dossier racine du projet (ai-service/)
+
+# Dossier racine du projet
 DOSSIER_PROJET = Path(__file__).resolve().parents[2]
 
 
@@ -20,50 +22,84 @@ class Reglages(BaseSettings):
     hote: str = "0.0.0.0"
     port: int = 8001
 
-    # Jeton Hugging Face : nécessaire car les modèles Kiriku sont "gated".
-    hf_token: str | None = None
+    # -----------------------------------------------------------------------
+    # API Kiriku distante
+    # -----------------------------------------------------------------------
 
-    # Dossiers où sont rangés les modèles et les fichiers audio
-    dossier_modeles: Path = DOSSIER_PROJET / "models"
+    kiriku_api_url: str = (
+        "https://14hyb7tjwzuh9q-8000.proxy.runpod.net/v1"
+    )
+    kiriku_api_key: str | None = None
+
+    # -----------------------------------------------------------------------
+    # Dossiers audio
+    # -----------------------------------------------------------------------
+
     dossier_audio_entree: Path = DOSSIER_PROJET / "audio" / "input"
     dossier_audio_sortie: Path = DOSSIER_PROJET / "audio" / "output"
 
+    # -----------------------------------------------------------------------
     # Limites
-    taille_max_audio_mo: int = 10
-    # Whisper traite au maximum 30 secondes d'audio en une fois.
-    duree_max_audio_secondes: int = 30
-    longueur_max_texte: int = 500
+    # -----------------------------------------------------------------------
 
-    # Lit les valeurs du fichier .env
-    model_config = {"env_file": DOSSIER_PROJET / ".env", "extra": "ignore"}
+    taille_max_audio_mo: int = 10
+
+    # L'API Kiriku accepte jusqu'à 60 secondes par transcription.
+    duree_max_audio_secondes: int = 60
+
+    # L'API Kiriku accepte jusqu'à 512 caractères par synthèse TTS.
+    longueur_max_texte: int = 512
+
+    # -----------------------------------------------------------------------
+    # Configuration .env
+    # -----------------------------------------------------------------------
+
+    model_config = {
+        "env_file": DOSSIER_PROJET / ".env",
+        "extra": "ignore",
+    }
 
 
 reglages = Reglages()
 
 
-# ---------------------------------------------------------------------------
-# Langues et modèles
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# LANGUES
+# ===========================================================================
 
-# Toutes les langues connues du projet (même celles pas encore disponibles).
+# Toutes les langues connues du projet.
 NOMS_LANGUES = {
     "wolof": "Wolof",
     "pulaar": "Pulaar",
     "serere": "Sérère",
 }
 
+
+# ===========================================================================
+# MODÈLES API KIRIKU
+# ===========================================================================
+
 # ASR : audio -> texte.
-# `token_langue` : M-Kiriku-ASR est multilingue et doit recevoir le token
-# de la langue (voir sa model card). Kiriku-Wolof-ASR n'en utilise pas.
+#
+# L'API distante utilise le même modèle pour les trois langues.
 MODELES_ASR = {
-    "wolof": {"nom_modele": "AIHubSN/Kiriku-Wolof-ASR", "token_langue": None},
-    "pulaar": {"nom_modele": "AIHubSN/M-Kiriku-ASR", "token_langue": "<|pu|>"},
-    # M-Kiriku-ASR sait aussi transcrire le Sérère. Pour l'activer :
-    # "serere": {"nom_modele": "AIHubSN/M-Kiriku-ASR", "token_langue": "<|se|>"},
+    "wolof": {
+        "nom_modele": "m-kiriku-asr",
+    },
+    "pulaar": {
+        "nom_modele": "m-kiriku-asr",
+    },
+    "serere": {
+        "nom_modele": "m-kiriku-asr",
+    },
 }
 
-# TTS : texte -> audio. Aucun modèle Sérère n'existe pour l'instant.
+
+# TTS : texte -> audio.
+#
+# L'API Kiriku fournit actuellement Wolof et Pulaar.
+# Il n'y a pas de voix Sérère.
 MODELES_TTS = {
-    "wolof": "AIHubSN/Kiriku-Wolof-TTS",
-    "pulaar": "AIHubSN/Kiriku-Pulaar-TTS",
+    "wolof": "kiriku-tts",
+    "pulaar": "kiriku-tts",
 }

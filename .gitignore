@@ -9,3 +9,5 @@ __pycache__/
 
 # Fichiers audio temporaires et générés (dossiers créés automatiquement)
 audio/
+env
+
