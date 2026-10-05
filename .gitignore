@@ -5,7 +5,7 @@ __pycache__/
 .env
 
 # Poids des modèles (plusieurs Go) : on les télécharge, on ne les versionne pas.
-models/
+/models/
 
 # Fichiers audio temporaires et générés (dossiers créés automatiquement)
 audio/
