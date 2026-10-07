@@ -5,13 +5,17 @@ from app.models.schemas import ReponseQuestion
 from app.services.agriculture_service import trouver_conseil
 from app.services.audio_service import preparer_audio_pour_asr, sauvegarder_audio_reponse
 from app.services.model_loader import synthetiser_texte, transcrire_audio
-
+import json
 router = APIRouter(tags=["Agriculture"])
 
 
 # Les noms "audio" et "language" sont ceux envoyés par Django : ne pas les changer.
 @router.post("/agriculture/ask", response_model=ReponseQuestion)
-def poser_question(audio: UploadFile = File(...), language: str = Form(...)):
+def poser_question(
+    audio: UploadFile = File(...),
+    language: str = Form(...),
+    agricultural_context: str = Form(None),
+):
     """Question vocale -> texte -> conseil agricole -> réponse vocale."""
     # 1. Vérifier que la langue a un modèle ASR et un modèle TTS
     langue = verifier_langue_asr(language)
@@ -24,7 +28,19 @@ def poser_question(audio: UploadFile = File(...), language: str = Form(...)):
     question = transcrire_audio(echantillons, langue)
 
     # 4. Texte -> conseil agricole
-    reponse = trouver_conseil(question, langue)
+    contexte = None
+
+    if agricultural_context:
+        try:
+            contexte = json.loads(agricultural_context)
+        except json.JSONDecodeError:
+            contexte = None
+
+    reponse = trouver_conseil(
+        question,
+        langue,
+        contexte
+    )
 
     # 5. Conseil -> audio
     audio_reponse, frequence = synthetiser_texte(reponse, langue)

@@ -276,7 +276,7 @@ def normaliser_question(question: str) -> str:
 # RECHERCHE DU CONSEIL
 # ============================================================
 
-def trouver_conseil(question: str, langue: str) -> str:
+def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
     """
     Retourne un conseil agricole temporaire dans la langue
     demandée.
@@ -288,6 +288,42 @@ def trouver_conseil(question: str, langue: str) -> str:
     """
 
     question = normaliser_question(question)
+
+        # Si un contexte de parcelle est fourni, produire une réponse
+    # directement basée sur les données agricoles.
+    if contexte:
+        parcelle = contexte.get("parcelle", {})
+        sol = contexte.get("sol", {})
+        production = contexte.get("production", {})
+        ventes = contexte.get("ventes", {})
+
+        culture = parcelle.get("culture") or "culture inconnue"
+        type_sol = parcelle.get("type_sol") or "type de sol inconnu"
+        humidite = sol.get("humidite_pct")
+        eau = sol.get("volume_eau_m3")
+        rendement = production.get("rendement_moyen")
+        vendu = ventes.get("vendu_total_kg")
+        invendu = ventes.get("invendu_total_kg")
+
+        if langue == "wolof":
+            return (
+                f"Sa parcelle {parcelle.get('id', '')} mooy {culture}, "
+                f"te suuf si {type_sol}. "
+                f"Tooy bi ci suuf si mooy {humidite} pour cent. "
+                f"Ci production bi, rendement bi mooy {rendement} tonnes ci hectare. "
+                f"Jusqu'à présent, {vendu} kilogrammes dañu jaay, "
+                f"te {invendu} kilogrammes des invendus."
+            )
+
+        if langue == "pulaar":
+            return (
+                f"Parcelle maa {parcelle.get('id', '')} woni {culture}, "
+                f"leydi maa ko {type_sol}. "
+                f"Tooyugol leydi maa ko {humidite} pour cent. "
+                f"Rendement maa ko {rendement} tonnes e hectare. "
+                f"{vendu} kilogrammes ɓe yejjii, "
+                f"e {invendu} kilogrammes ko heddii."
+            )
 
     conseils_langue = CONSEILS.get(langue, [])
 
