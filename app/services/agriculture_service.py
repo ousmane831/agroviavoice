@@ -289,6 +289,11 @@ def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
 
     question = normaliser_question(question)
 
+    print("DEBUG QUESTION :", repr(question))
+    print("DEBUG CONTEXTE :", contexte)
+
+    # Si un contexte de parcelle est fourni...
+
         # Si un contexte de parcelle est fourni, produire une réponse
     # directement basée sur les données agricoles.
     if contexte:
@@ -297,6 +302,8 @@ def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
         production = contexte.get("production", {})
         ventes = contexte.get("ventes", {})
 
+        
+
         culture = parcelle.get("culture") or "culture inconnue"
         type_sol = parcelle.get("type_sol") or "type de sol inconnu"
         humidite = sol.get("humidite_pct")
@@ -304,16 +311,60 @@ def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
         rendement = production.get("rendement_moyen")
         vendu = ventes.get("vendu_total_kg")
         invendu = ventes.get("invendu_total_kg")
+        recolte = ventes.get("recolte_total_kg")
 
-        if langue == "wolof":
-            return (
-                f"Sa parcelle {parcelle.get('id', '')} mooy {culture}, "
-                f"te suuf si {type_sol}. "
-                f"Tooy bi ci suuf si mooy {humidite} pour cent. "
-                f"Ci production bi, rendement bi mooy {rendement} tonnes ci hectare. "
-                f"Jusqu'à présent, {vendu} kilogrammes dañu jaay, "
-                f"te {invendu} kilogrammes des invendus."
-            )
+        if isinstance(vendu, float) and vendu.is_integer():
+            vendu = int(vendu)
+
+        if isinstance(invendu, float) and invendu.is_integer():
+            invendu = int(invendu)
+
+        # Questions sur les ventes
+        mots_vente = [
+            "jaay",
+            "vend",
+            "vendre",
+            "vente",
+            "vendu",
+            "vendue",
+        ]
+
+        # Questions sur la récolte
+        mots_recolte = [
+            "récolté",
+            "recolte",
+            "récolte",
+            "récolter",
+            "récolte",
+        ]
+
+        if any(mot in question for mot in mots_vente):
+            if vendu is not None:
+                if langue == "wolof":
+                    return f"Ci sa parcelle, {vendu} kilogrammes nga jaay."
+
+                if langue == "fr":
+                    return f"Sur votre parcelle, vous avez vendu {vendu} kilogrammes."
+
+                if langue == "pulaar":
+                    return f"Parcelle maa, {vendu} kilogrammes a yejjii."
+
+                if langue == "serere":
+                    return f"Ci sa parcelle, {vendu} kilogrammes nga vend."
+
+        if any(mot in question for mot in mots_recolte):
+            if recolte is not None:
+                if langue == "fr":
+                    return f"Sur votre parcelle, vous avez récolté {recolte} kilogrammes."
+
+                if langue == "wolof":
+                    return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
+
+                if langue == "pulaar":
+                    return f"Parcelle maa, {recolte} kilogrammes nga récolte."
+
+                if langue == "serere":
+                    return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
 
         if langue == "pulaar":
             return (

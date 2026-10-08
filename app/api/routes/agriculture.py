@@ -8,6 +8,74 @@ from app.services.model_loader import synthetiser_texte, transcrire_audio
 import json
 router = APIRouter(tags=["Agriculture"])
 
+@router.post("/agriculture/transcribe")
+def transcrire_question(
+    audio: UploadFile = File(...),
+    language: str = Form(...),
+):
+    """Audio -> texte uniquement avec KIRIKU ASR."""
+    langue = verifier_langue_asr(language)
+
+    echantillons = preparer_audio_pour_asr(
+        audio.filename,
+        audio.file.read(),
+    )
+
+    question = transcrire_audio(
+        echantillons,
+        langue,
+    )
+
+    return {
+        "question": question,
+        "language": langue,
+    }
+
+
+@router.post("/agriculture/respond", response_model=ReponseQuestion)
+def repondre_question(
+    question: str = Form(...),
+    language: str = Form(...),
+    agricultural_context: str = Form(None),
+):
+    """Texte + contexte agricole -> conseil -> réponse vocale."""
+
+    # 1. Vérifier la langue pour le TTS
+    langue = verifier_langue_asr(language)
+    verifier_langue_tts(langue)
+
+    # 2. Lire le contexte agricole
+    contexte = None
+
+    if agricultural_context:
+        try:
+            contexte = json.loads(agricultural_context)
+        except json.JSONDecodeError:
+            contexte = None
+
+    # 3. Générer le conseil agricole
+    reponse = trouver_conseil(
+        question,
+        langue,
+        contexte,
+    )
+
+    # 4. Transformer la réponse en audio avec KIRIKU TTS
+    audio_reponse, frequence = synthetiser_texte(
+        reponse,
+        langue,
+    )
+
+    nom_fichier = sauvegarder_audio_reponse(
+        audio_reponse,
+        frequence,
+    )
+
+    return ReponseQuestion(
+        question=question,
+        answer=reponse,
+        audio_url=f"/audio/{nom_fichier}",
+    )
 
 # Les noms "audio" et "language" sont ceux envoyés par Django : ne pas les changer.
 @router.post("/agriculture/ask", response_model=ReponseQuestion)
