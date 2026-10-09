@@ -115,3 +115,39 @@ def poser_question(
     nom_fichier = sauvegarder_audio_reponse(audio_reponse, frequence)
 
     return ReponseQuestion(question=question, answer=reponse, audio_url=f"/audio/{nom_fichier}")
+
+
+@router.post("/agriculture/synthesize")
+def synthetiser_reponse(
+    text: str = Form(...),
+    language: str = Form(...),
+):
+    """Texte déjà formulé -> réponse vocale avec KIRIKU TTS."""
+
+    # 1. Vérifier que la langue possède un modèle TTS
+    langue = verifier_langue_asr(language)
+    verifier_langue_tts(langue)
+
+    # 2. Vérifier que le texte n'est pas vide
+    if not text.strip():
+        return {
+            "error": "Le texte à synthétiser est vide."
+        }
+
+    # 3. Texte -> audio avec KIRIKU TTS
+    audio_reponse, frequence = synthetiser_texte(
+        text,
+        langue,
+    )
+
+    # 4. Sauvegarder le fichier audio
+    nom_fichier = sauvegarder_audio_reponse(
+        audio_reponse,
+        frequence,
+    )
+
+    return {
+        "text": text,
+        "language": langue,
+        "audio_url": f"/audio/{nom_fichier}",
+    }
