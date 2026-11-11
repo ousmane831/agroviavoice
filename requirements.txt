@@ -1,7 +1,11 @@
 # ============================================================
-# Agrivoice-IA
-# Python 3.10.11
+# AgroviaVoice — service IA (modèles Kiriku en local)
+# Python 3.12 (Ubuntu 24.04)
 # ============================================================
+
+# torch en version CPU (~200 Mo au lieu de ~2 Go pour la version GPU).
+# Sur un serveur avec GPU NVIDIA : retirer cette ligne.
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 # --- API web ---
 fastapi==0.115.6
@@ -11,11 +15,20 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 
 # --- Audio ---
-numpy==1.22.0
+numpy>=1.26,<2.3
 soundfile==0.12.1
 
-# --- API Kiriku (OpenAI-compatible) ---
-openai>=1.0.0
+# --- ASR : M-Kiriku-ASR via faster-whisper (CTranslate2, int8) ---
+faster-whisper==1.2.1
+ctranslate2>=4.4,<5
+
+# --- TTS : modèles VITS Kiriku via coqui-tts (fork maintenu de Coqui TTS) ---
+torch==2.8.0
+torchaudio==2.8.0
+coqui-tts==0.28.0
+# transformers sert aussi à convertir le modèle ASR (scripts/telecharger_modeles.py)
+transformers>=4.57,<5
+huggingface_hub>=0.36
 
 # --- Tests ---
 pytest==8.3.4

@@ -1,15 +1,13 @@
-
 """
 Configuration centrale du service.
 
-Les réglages viennent du fichier `.env`.
-Les modèles Kiriku sont utilisés via l'API distante du concours.
+Les réglages viennent du fichier `.env` (sinon, les valeurs par défaut ci-dessous).
+Les modèles Kiriku tournent EN LOCAL sur le serveur : aucune API externe.
 """
 
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
-
 
 # Dossier racine du projet
 DOSSIER_PROJET = Path(__file__).resolve().parents[2]
@@ -23,17 +21,38 @@ class Reglages(BaseSettings):
     port: int = 8001
 
     # -----------------------------------------------------------------------
-    # API Kiriku distante
+    # Modèles locaux
     # -----------------------------------------------------------------------
 
-    kiriku_api_url: str = (
-        "https://14hyb7tjwzuh9q-8000.proxy.runpod.net/v1"
-    )
-    kiriku_api_key: str | None = None
+    # Jeton Hugging Face : utile UNIQUEMENT pour télécharger les modèles
+    # (scripts/telecharger_modeles.py). Le service lui-même n'en a pas besoin.
+    hf_token: str | None = None
+
+    # Dossier où sont rangés les modèles téléchargés / convertis.
+    dossier_modeles: Path = DOSSIER_PROJET / "models"
+
+    # "cpu" (VPS sans GPU) ou "cuda" (serveur avec GPU NVIDIA).
+    appareil: str = "cpu"
+
+    # Nombre de cœurs CPU utilisés par les modèles (0 = automatique).
+    nombre_threads: int = 0
+
+    # ASR (faster-whisper) : "int8" = rapide et léger sur CPU,
+    # "float16" conseillé sur GPU.
+    asr_type_calcul: str = "int8"
+
+    # 1 = le plus rapide (recommandé sur CPU), 5 = un peu plus précis mais plus lent.
+    asr_beam_size: int = 1
+
+    # Charger les modèles au démarrage (sinon : à la première requête, qui sera lente).
+    precharger_modeles: bool = True
 
     # -----------------------------------------------------------------------
-    # Dossiers audio
+    # Outils et dossiers audio
     # -----------------------------------------------------------------------
+
+    # Chemin vers ffmpeg. "ffmpeg" = celui trouvé dans le PATH.
+    chemin_ffmpeg: str = "ffmpeg"
 
     dossier_audio_entree: Path = DOSSIER_PROJET / "audio" / "input"
     dossier_audio_sortie: Path = DOSSIER_PROJET / "audio" / "output"
@@ -43,21 +62,21 @@ class Reglages(BaseSettings):
     # -----------------------------------------------------------------------
 
     taille_max_audio_mo: int = 10
-
-    # L'API Kiriku accepte jusqu'à 60 secondes par transcription.
     duree_max_audio_secondes: int = 60
+    longueur_max_texte: int = 1000
 
-    # L'API Kiriku accepte jusqu'à 512 caractères par synthèse TTS.
-    longueur_max_texte: int = 512
+    # Les réponses audio plus vieilles que ce nombre d'heures sont supprimées.
+    duree_conservation_audio_heures: int = 24
 
-    # -----------------------------------------------------------------------
-    # Configuration .env
-    # -----------------------------------------------------------------------
+    model_config = {"env_file": DOSSIER_PROJET / ".env", "extra": "ignore"}
 
-    model_config = {
-        "env_file": DOSSIER_PROJET / ".env",
-        "extra": "ignore",
-    }
+    @property
+    def dossier_asr(self) -> Path:
+        """Modèle ASR converti au format faster-whisper (CTranslate2)."""
+        return self.dossier_modeles / "asr" / "m-kiriku-asr-ct2"
+
+    def dossier_tts(self, langue: str) -> Path:
+        return self.dossier_modeles / "tts" / langue
 
 
 reglages = Reglages()
@@ -67,7 +86,7 @@ reglages = Reglages()
 # LANGUES
 # ===========================================================================
 
-# Toutes les langues connues du projet.
+# Toutes les langues connues du projet (même celles pas encore disponibles).
 NOMS_LANGUES = {
     "wolof": "Wolof",
     "pulaar": "Pulaar",
@@ -76,30 +95,23 @@ NOMS_LANGUES = {
 
 
 # ===========================================================================
-# MODÈLES API KIRIKU
+# MODÈLES (noms Hugging Face définis UNIQUEMENT ici)
 # ===========================================================================
 
-# ASR : audio -> texte.
-#
-# L'API distante utilise le même modèle pour les trois langues.
-MODELES_ASR = {
-    "wolof": {
-        "nom_modele": "m-kiriku-asr",
-    },
-    "pulaar": {
-        "nom_modele": "m-kiriku-asr",
-    },
-    "serere": {
-        "nom_modele": "m-kiriku-asr",
-    },
+# ASR : un seul modèle multilingue pour les trois langues.
+MODELE_ASR_HF = "AIHubSN/M-Kiriku-ASR"
+
+# Code de langue Whisper attendu par M-Kiriku-ASR (le modèle reçoit le jeton
+# "<|code|>"). Le script de téléchargement vérifie que ces jetons existent
+# bien dans le tokenizer du modèle et affiche la liste réelle sinon.
+LANGUES_ASR = {
+    "wolof": "wo",
+    "pulaar": "pu",
+    "serere": "se",
 }
 
-
-# TTS : texte -> audio.
-#
-# L'API Kiriku fournit actuellement Wolof et Pulaar.
-# Il n'y a pas de voix Sérère.
+# TTS : texte -> audio (VITS). Aucun modèle Sérère n'existe pour l'instant.
 MODELES_TTS = {
-    "wolof": "kiriku-tts",
-    "pulaar": "kiriku-tts",
+    "wolof": "AIHubSN/Kiriku-Wolof-TTS",
+    "pulaar": "AIHubSN/Kiriku-Pulaar-TTS",
 }

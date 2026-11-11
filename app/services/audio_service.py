@@ -6,6 +6,7 @@ Ce fichier ne connaît ni FastAPI, ni les modèles IA.
 """
 
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import soundfile as sf
 
 from app.core.config import reglages
 from app.core.errors import ErreurApp
-CHEMIN_FFMPEG = r"C:\Users\HP ELITEBOOK G6\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg.Shared_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-9.0.2-full_build-shared\bin\ffmpeg.exe"
+
 # .ogg : format des notes vocales WhatsApp, très utilisé par les agriculteurs.
 # .webm : format enregistré par le micro du navigateur (Chrome, Firefox).
 EXTENSIONS_AUTORISEES = [".wav", ".mp3", ".m4a", ".ogg", ".webm"]
@@ -65,19 +66,21 @@ def convertir_audio(chemin_entree: Path) -> Path:
     """Convertit n'importe quel format accepté en WAV mono 16 kHz avec ffmpeg."""
     chemin_sortie = chemin_entree.with_name(f"{chemin_entree.stem}_converti.wav")
     commande = [
-    CHEMIN_FFMPEG,
-    "-y",
-    "-loglevel",
-    "error",
-    "-i", str(chemin_entree),
-    "-ac", "1",
-    "-ar", str(FREQUENCE_ASR),
-    str(chemin_sortie),
-]
+        reglages.chemin_ffmpeg,
+        "-y",
+        "-loglevel", "error",
+        "-i", str(chemin_entree),
+        "-ac", "1",
+        "-ar", str(FREQUENCE_ASR),
+        str(chemin_sortie),
+    ]
     try:
         resultat = subprocess.run(commande, capture_output=True, text=True, timeout=60)
     except FileNotFoundError:
         raise ErreurApp("FFMPEG_NOT_FOUND", "ffmpeg n'est pas installé sur le serveur.", code_http=500)
+    except subprocess.TimeoutExpired:
+        supprimer_fichier(chemin_sortie)
+        raise ErreurApp("INVALID_AUDIO_FILE", "La conversion de l'audio a pris trop de temps.")
 
     if resultat.returncode != 0:
         supprimer_fichier(chemin_sortie)
@@ -124,9 +127,21 @@ def preparer_audio_pour_asr(nom_fichier: str, contenu: bytes) -> np.ndarray:
 def sauvegarder_audio_reponse(echantillons, frequence: int) -> str:
     """Écrit l'audio généré dans audio/output/ et retourne le nom du fichier."""
     reglages.dossier_audio_sortie.mkdir(parents=True, exist_ok=True)
+    nettoyer_anciennes_reponses()
     nom_fichier = f"reponse_{uuid.uuid4().hex}.wav"
     sf.write(reglages.dossier_audio_sortie / nom_fichier, np.asarray(echantillons, dtype=np.float32), frequence)
     return nom_fichier
+
+
+def nettoyer_anciennes_reponses() -> None:
+    """Supprime les réponses audio plus vieilles que la durée de conservation."""
+    limite = time.time() - reglages.duree_conservation_audio_heures * 3600
+    for chemin in reglages.dossier_audio_sortie.glob("reponse_*.wav"):
+        try:
+            if chemin.stat().st_mtime < limite:
+                chemin.unlink()
+        except OSError:
+            pass  # fichier déjà supprimé entre-temps
 
 
 def supprimer_fichier(chemin: Path) -> None:

@@ -15,9 +15,31 @@ class ReponseSante(BaseModel):
     service: str
 
 
-class ReponseQuestion(BaseModel):
-    """Réponse de POST /agriculture/ask."""
+class EtatModeles(BaseModel):
+    """Réponse de GET /health/models."""
 
-    question: str   # texte transcrit de la question vocale
+    status: str           # "ok" si tous les modèles sont chargés, sinon "degraded"
+    models: dict[str, bool]
+
+
+class ReponseTranscription(BaseModel):
+    """Réponse de POST /agriculture/transcribe."""
+
+    question: str
+    language: str
+
+
+class ReponseQuestion(BaseModel):
+    """Réponse de POST /agriculture/ask et /agriculture/respond."""
+
+    question: str   # texte de la question (transcrit ou envoyé)
     answer: str     # conseil agricole dans la langue de l'agriculteur
     audio_url: str  # lien vers la réponse vocale, ex. /audio/reponse_xxx.wav
+
+
+class ReponseSynthese(BaseModel):
+    """Réponse de POST /agriculture/synthesize."""
+
+    text: str
+    language: str
+    audio_url: str

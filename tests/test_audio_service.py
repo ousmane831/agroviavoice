@@ -13,7 +13,7 @@ def convertir_avec_ffmpeg(tmp_path, nom_sortie, *options):
     chemin_wav = tmp_path / "exemple.wav"
     chemin_wav.write_bytes(creer_wav(tmp_path))
     chemin_sortie = tmp_path / nom_sortie
-    commande = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(chemin_wav), *options, str(chemin_sortie)]
+    commande = [reglages.chemin_ffmpeg, "-y", "-loglevel", "error", "-i", str(chemin_wav), *options, str(chemin_sortie)]
     subprocess.run(commande, check=True)
     return chemin_sortie.read_bytes()
 

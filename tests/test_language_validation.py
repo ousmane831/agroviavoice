@@ -14,10 +14,14 @@ def test_langue_inconnue_refusee():
     assert erreur.value.code == "LANGUAGE_NOT_SUPPORTED"
 
 
-@pytest.mark.parametrize("verifier", [verifier_langue_asr, verifier_langue_tts])
-def test_serere_connu_mais_pas_disponible(verifier):
+def test_serere_disponible_en_asr():
+    # M-Kiriku-ASR transcrit aussi le sérère.
+    assert verifier_langue_asr("serere") == "serere"
+
+
+def test_serere_pas_disponible_en_tts():
     with pytest.raises(ErreurApp) as erreur:
-        verifier("serere")
+        verifier_langue_tts("serere")
     assert erreur.value.code == "LANGUAGE_NOT_AVAILABLE"
     assert erreur.value.message == "La langue Sérère n'est pas encore disponible."
 

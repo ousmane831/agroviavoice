@@ -6,7 +6,7 @@ Deux cas d'erreur différents :
 - langue connue mais sans modèle (ex. Sérère en TTS) -> LANGUAGE_NOT_AVAILABLE
 """
 
-from app.core.config import MODELES_ASR, MODELES_TTS, NOMS_LANGUES
+from app.core.config import LANGUES_ASR, MODELES_TTS, NOMS_LANGUES
 from app.core.errors import ErreurApp
 
 
@@ -21,7 +21,7 @@ def normaliser_langue(langue: str) -> str:
 def verifier_langue_asr(langue: str) -> str:
     """Retourne le code de la langue si un modèle ASR existe pour elle."""
     code_langue = normaliser_langue(langue)
-    if code_langue not in MODELES_ASR:
+    if code_langue not in LANGUES_ASR:
         raise ErreurApp(
             "LANGUAGE_NOT_AVAILABLE",
             f"La langue {NOMS_LANGUES[code_langue]} n'est pas encore disponible.",

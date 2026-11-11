@@ -13,7 +13,10 @@ IMPORTANT :
   locuteurs natifs et des conseillers agricoles.
 """
 
+import logging
 import re
+
+journal = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -273,10 +276,86 @@ def normaliser_question(question: str) -> str:
 
 
 # ============================================================
+# REPONSES BASEES SUR LES DONNEES DE LA PARCELLE
+# ============================================================
+
+MOTS_VENTE = ["jaay", "vend", "vente"]
+MOTS_RECOLTE = ["recolt", "récolt"]
+
+
+def _section(contexte: dict, cle: str) -> dict:
+    """Retourne une section du contexte, ou {} si elle est absente ou mal formée."""
+    valeur = contexte.get(cle)
+    return valeur if isinstance(valeur, dict) else {}
+
+
+def _nombre(valeur):
+    """10474.0 -> 10474 (plus naturel à l'oral)."""
+    if isinstance(valeur, float) and valeur.is_integer():
+        return int(valeur)
+    return valeur
+
+
+def _repondre_avec_contexte(question: str, langue: str, contexte: dict) -> str | None:
+    """
+    Répond à partir des données envoyées par Django (parcelle, sol, ventes...).
+    Retourne None si la question ne concerne pas ces données.
+
+    TODO : phrases à faire valider par des locuteurs natifs.
+    """
+    parcelle = _section(contexte, "parcelle")
+    sol = _section(contexte, "sol")
+    production = _section(contexte, "production")
+    ventes = _section(contexte, "ventes")
+
+    vendu = _nombre(ventes.get("vendu_total_kg"))
+    invendu = _nombre(ventes.get("invendu_total_kg"))
+    recolte = _nombre(ventes.get("recolte_total_kg"))
+
+    # Questions sur les ventes
+    if vendu is not None and any(mot in question for mot in MOTS_VENTE):
+        if langue == "wolof":
+            return f"Ci sa parcelle, {vendu} kilogrammes nga jaay."
+        if langue == "pulaar":
+            return f"Parcelle maa, {vendu} kilogrammes a yejjii."
+
+    # Questions sur la récolte
+    if recolte is not None and any(mot in question for mot in MOTS_RECOLTE):
+        if langue == "wolof":
+            return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
+        if langue == "pulaar":
+            # TODO : "nga" est du wolof, traduction pulaar à fournir.
+            return f"Parcelle maa, {recolte} kilogrammes nga récolte."
+
+    # Résumé général de la parcelle (pulaar uniquement pour l'instant).
+    # Seules les informations réellement connues sont lues.
+    if langue == "pulaar" and parcelle:
+        morceaux = []
+        if parcelle.get("culture"):
+            morceaux.append(f"Parcelle maa {parcelle.get('id', '')} woni {parcelle['culture']}.")
+        if parcelle.get("type_sol"):
+            morceaux.append(f"Leydi maa ko {parcelle['type_sol']}.")
+        humidite = _nombre(sol.get("humidite_pct"))
+        if humidite is not None:
+            morceaux.append(f"Tooyugol leydi maa ko {humidite} pour cent.")
+        rendement = _nombre(production.get("rendement_moyen"))
+        if rendement is not None:
+            morceaux.append(f"Rendement maa ko {rendement} tonnes e hectare.")
+        if vendu is not None:
+            morceaux.append(f"{vendu} kilogrammes ɓe yejjii.")
+        if invendu is not None:
+            morceaux.append(f"{invendu} kilogrammes ko heddii.")
+        if morceaux:
+            return " ".join(morceaux)
+
+    return None
+
+
+# ============================================================
 # RECHERCHE DU CONSEIL
 # ============================================================
 
-def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
+def trouver_conseil(question: str, langue: str, contexte: dict | None = None) -> str:
     """
     Retourne un conseil agricole temporaire dans la langue
     demandée.
@@ -288,93 +367,14 @@ def trouver_conseil(question: str, langue: str, contexte: dict = None) -> str:
     """
 
     question = normaliser_question(question)
+    journal.debug("Question reçue (%s) : %r", langue, question)
 
-    print("DEBUG QUESTION :", repr(question))
-    print("DEBUG CONTEXTE :", contexte)
-
-    # Si un contexte de parcelle est fourni...
-
-        # Si un contexte de parcelle est fourni, produire une réponse
-    # directement basée sur les données agricoles.
-    if contexte:
-        parcelle = contexte.get("parcelle", {})
-        sol = contexte.get("sol", {})
-        production = contexte.get("production", {})
-        ventes = contexte.get("ventes", {})
-
-        
-
-        culture = parcelle.get("culture") or "culture inconnue"
-        type_sol = parcelle.get("type_sol") or "type de sol inconnu"
-        humidite = sol.get("humidite_pct")
-        eau = sol.get("volume_eau_m3")
-        rendement = production.get("rendement_moyen")
-        vendu = ventes.get("vendu_total_kg")
-        invendu = ventes.get("invendu_total_kg")
-        recolte = ventes.get("recolte_total_kg")
-
-        if isinstance(vendu, float) and vendu.is_integer():
-            vendu = int(vendu)
-
-        if isinstance(invendu, float) and invendu.is_integer():
-            invendu = int(invendu)
-
-        # Questions sur les ventes
-        mots_vente = [
-            "jaay",
-            "vend",
-            "vendre",
-            "vente",
-            "vendu",
-            "vendue",
-        ]
-
-        # Questions sur la récolte
-        mots_recolte = [
-            "récolté",
-            "recolte",
-            "récolte",
-            "récolter",
-            "récolte",
-        ]
-
-        if any(mot in question for mot in mots_vente):
-            if vendu is not None:
-                if langue == "wolof":
-                    return f"Ci sa parcelle, {vendu} kilogrammes nga jaay."
-
-                if langue == "fr":
-                    return f"Sur votre parcelle, vous avez vendu {vendu} kilogrammes."
-
-                if langue == "pulaar":
-                    return f"Parcelle maa, {vendu} kilogrammes a yejjii."
-
-                if langue == "serere":
-                    return f"Ci sa parcelle, {vendu} kilogrammes nga vend."
-
-        if any(mot in question for mot in mots_recolte):
-            if recolte is not None:
-                if langue == "fr":
-                    return f"Sur votre parcelle, vous avez récolté {recolte} kilogrammes."
-
-                if langue == "wolof":
-                    return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
-
-                if langue == "pulaar":
-                    return f"Parcelle maa, {recolte} kilogrammes nga récolte."
-
-                if langue == "serere":
-                    return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
-
-        if langue == "pulaar":
-            return (
-                f"Parcelle maa {parcelle.get('id', '')} woni {culture}, "
-                f"leydi maa ko {type_sol}. "
-                f"Tooyugol leydi maa ko {humidite} pour cent. "
-                f"Rendement maa ko {rendement} tonnes e hectare. "
-                f"{vendu} kilogrammes ɓe yejjii, "
-                f"e {invendu} kilogrammes ko heddii."
-            )
+    # Si un contexte de parcelle est fourni, essayer d'abord de répondre
+    # directement avec les données de l'agriculteur.
+    if isinstance(contexte, dict):
+        reponse = _repondre_avec_contexte(question, langue, contexte)
+        if reponse:
+            return reponse
 
     conseils_langue = CONSEILS.get(langue, [])
 
