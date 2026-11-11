@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import agriculture, health
 from app.core.config import reglages
 from app.core.errors import enregistrer_gestionnaires_erreurs
+from app.services.agriculture_service import charger_base
 from app.services.model_loader import precharger_modeles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s : %(message)s")
@@ -26,6 +27,8 @@ PREFIXE_API = "/api/v1"
 
 @asynccontextmanager
 async def cycle_de_vie(app: FastAPI):
+    # Une erreur dans conseils.json empêche le démarrage (message clair dans les logs).
+    charger_base()
     if reglages.precharger_modeles:
         await run_in_threadpool(precharger_modeles)
     yield

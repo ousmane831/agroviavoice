@@ -1,0 +1,209 @@
+{
+  "_lisez_moi": [
+    "Base de conseils agricoles d'AgroviaVoice. Ce fichier peut être modifié sans toucher au code.",
+    "Après modification : lancer 'python -m scripts.verifier_conseils' puis redémarrer le service.",
+    "mots_cles : par langue ('wolof', 'pulaar', 'serere') + 'commun' (mots français utilisés dans toutes les langues).",
+    "Un mot-clé est comparé à des MOTS ENTIERS, sans tenir compte des accents ni des majuscules.",
+    "Un mot-clé qui finit par * accepte toutes les terminaisons : 'recolt*' trouve recolte, récolté, récolter...",
+    "Le sujet qui reconnaît le plus de mots de la question gagne. À égalité : le premier de la liste.",
+    "Placez donc les sujets précis (arachide, mil...) AVANT les sujets généraux.",
+    "valide : passer à true quand le texte a été relu par un agronome ET un locuteur natif.",
+    "Les textes actuels sont TEMPORAIRES (MVP) et doivent être validés."
+  ],
+
+  "sujets": [
+    {
+      "id": "arachide",
+      "mots_cles": {
+        "wolof": ["gerte"],
+        "pulaar": ["gerte"],
+        "commun": ["arachide*"]
+      },
+      "conseils": {
+        "wolof": "Bu ngay ji gerte, seet bu baax ne suuf si set na te am na tooy. Tàmbali ji bi gannaaw bu taw bi tàmbalee bu baax.",
+        "pulaar": "So a waɗa gerte, ƴeewto leydi e ndiyam. Ɓeydude semis e waqtu moƴƴi waawi wallude culture maa."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "mil",
+      "mots_cles": {
+        "wolof": ["dugub"],
+        "pulaar": ["dugub", "milt"],
+        "commun": ["mil"]
+      },
+      "conseils": {
+        "wolof": "Bu ngay ji dugub, xool ne suuf si tooy na bu baax. Bul ji ci suuf bu wow lool, te seet xaalis bi gannaaw taw.",
+        "pulaar": "So a waɗa dugub, ƴeewto leydi e ndiyam ndee. Waɗ semis nde taw e xaalu leydi maa moƴƴi."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "legumes",
+      "mots_cles": {
+        "wolof": ["tomaat"],
+        "commun": ["tomate*", "legume*", "poivron*", "oignon*"]
+      },
+      "conseils": {
+        "wolof": "Ci légumes yi, seet suuf si, ndox mi ak xaalu xob yi saa su nekk. Bu nga gis coppite bu doy waar, jël nataal ngir xool ko."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "maladies",
+      "mots_cles": {
+        "wolof": ["feebar", "wérul"],
+        "pulaar": ["feebre", "feebar"],
+        "commun": ["maladie*", "maladi"]
+      },
+      "conseils": {
+        "wolof": "Bu nga gis feebar ci sa mbey, jël nataal bu leer te xool xob yi, garab yi ak coppite yi ci plant bi avant a def ay traitement.",
+        "pulaar": "So a yiyii feebre e culture maa, ƴeewto ɗe ngesa e leaf ɗe. Naatnu foto moƴƴo ngam ƴeewtagol feebre ndee."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "ravageurs",
+      "mots_cles": {
+        "wolof": ["jëf", "mboy"],
+        "commun": ["insect*", "ravageur*"]
+      },
+      "conseils": {
+        "wolof": "Bu nga gis ay insectes ci sa culture, xool fu ñu bari ak ni ñuy yàq plant yi. Nataal bu leer mën na dimbali ngir seetlu leen.",
+        "pulaar": "So a yiyii insectes e ngesa maa, ƴeewto ɗo ɓe heɓi e no ɓe bonniri culture maa. Foto waawi wallude e ƴeewtagol."
+      },
+      "source": "",
+      "valide": false,
+      "note": "Wolof : 'jëf' signifie plutôt 'acte' ; mot-clé à vérifier."
+    },
+    {
+      "id": "engrais",
+      "mots_cles": {
+        "commun": ["engrais", "fertilis*", "nutriment*", "azote", "phosphore", "potassium", "npk", "uree", "fumier"]
+      },
+      "conseils": {
+        "wolof": "Bul def engrais ci xel rekk. Xam xaalu suuf si moo gën a baax ngir xam li culture bi soxla. Bu amee analyse du suuf, jëfandikoo ko."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "semis",
+      "mots_cles": {
+        "wolof": ["ji", "jiitu"],
+        "commun": ["semis", "semer", "seme*", "semence*", "graine*"]
+      },
+      "conseils": {
+        "wolof": "Bu ngay ji, xool taw yi ak xaalu suuf si. Suuf bi war na am tooy bu doy ngir graines yi man a tàmbali."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "recolte",
+      "mots_cles": {
+        "wolof": ["njël", "dund"],
+        "commun": ["recolt*"]
+      },
+      "conseils": {
+        "wolof": "Bu ñuy jeexal culture, xool màggug plant bi ak xaalam. Tànnal waxtu bu baax ngir récolte bi te aar produit yi."
+      },
+      "source": "",
+      "valide": false,
+      "note": "Wolof : 'dund' signifie plutôt 'vivre' ; mot-clé à vérifier."
+    },
+    {
+      "id": "eau",
+      "mots_cles": {
+        "wolof": ["ndox", "wisal"],
+        "pulaar": ["ndiyam"],
+        "commun": ["eau", "irrigu*", "irrigation", "arros*"]
+      },
+      "conseils": {
+        "wolof": "Wisal sa tool ci suba walla ci ngoon, waaye xool xaalu suuf si ba noppi bañ a def ndox bu ëpp. Bu tawee, xool ndox bi ci tool bi.",
+        "pulaar": "Hoto ndiyam e gese maa subaka walla kikiiɗe. Hoto waɗa ndiyam ɗuɗɗum, ngam leydi maa waawi waasde."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "meteo",
+      "mots_cles": {
+        "wolof": ["taw", "weer"],
+        "commun": ["meteo", "pluie*", "climat"]
+      },
+      "conseils": {
+        "wolof": "Xool xaalu taw yi ak météo laata ngay ji, wisal walla def traitement. Xibaaru météo mën na dimbali la ngir gën a tëral sa mbey."
+      },
+      "source": "",
+      "valide": false
+    },
+    {
+      "id": "sol",
+      "mots_cles": {
+        "wolof": ["suuf"],
+        "pulaar": ["suuf"],
+        "commun": ["sol", "sols", "ph", "terre*"]
+      },
+      "conseils": {
+        "wolof": "Xool xaalu suuf si bu njëkk. Tooy, pH ak ay nutriments mën nañu soppi ni ngay doxale sa culture.",
+        "pulaar": "Ƴeewto xaalu leydi maa. Ɓeydude kabaruuji dow suuf, ndiyam e nutriments mbaawi wallude e cuɓagol bonnude culture."
+      },
+      "source": "",
+      "valide": false,
+      "note": "Pulaar : 'suuf' est un mot wolof ; le mot pulaar est 'leydi' (déjà utilisé par le sujet 'general')."
+    },
+    {
+      "id": "general",
+      "mots_cles": {
+        "wolof": ["tool", "mbay", "mbey"],
+        "pulaar": ["lesdi", "leydi", "ngesa", "mbay"],
+        "commun": ["culture*", "parcelle*", "champ*"]
+      },
+      "conseils": {
+        "wolof": "Ngir gën a doxal sa mbey, xool suuf, ndox, météo ak xaalu culture bi. Données yu jóge ci sa parcelle mën nañu dimbali la ci ay décisions yu gën a baax.",
+        "pulaar": "Ɗaɓɓu xaalu leydi maa, ndiyam e ɗaɓɓude culture maa. Ɗee kabaruuji mbaawi wallude maa e cuɓagol moƴƴere."
+      },
+      "source": "",
+      "valide": false
+    }
+  ],
+
+  "reponses_par_defaut": {
+    "wolof": "Jërëjëf ci sa laaj. Léegi, man naa dimbali la ci suuf, ndox, culture, feebar, insectes walla météo. Wax ma lu ngay jàngale ci sa tool ngir ma gën a dimbali la.",
+    "pulaar": "A jaaraama e naamnal maa. Mi waawi wallude maa e leydi, ndiyam, culture, feebre, insectes walla météo. Haaldu-mi ko wonde e ngesa maa ngam mi wallu maa ɓurɗo."
+  },
+
+  "donnees_parcelle": {
+    "_lisez_moi": "Réponses construites avec les données envoyées par Django. Les {noms} sont remplacés par les valeurs de la parcelle.",
+    "mots_cles": {
+      "vente": ["jaay*", "vend*", "vente*"],
+      "recolte": ["recolt*"]
+    },
+    "reponses": {
+      "vente": {
+        "wolof": "Ci sa parcelle, {vendu} kilogrammes nga jaay.",
+        "pulaar": "Parcelle maa, {vendu} kilogrammes a yejjii."
+      },
+      "recolte": {
+        "wolof": "Ci sa parcelle, {recolte} kilogrammes nga récolte.",
+        "pulaar": "Parcelle maa, {recolte} kilogrammes nga récolte."
+      }
+    },
+    "resume": {
+      "pulaar": {
+        "culture": "Parcelle maa {id} woni {culture}.",
+        "type_sol": "Leydi maa ko {type_sol}.",
+        "humidite": "Tooyugol leydi maa ko {humidite} pour cent.",
+        "rendement": "Rendement maa ko {rendement} tonnes e hectare.",
+        "vendu": "{vendu} kilogrammes ɓe yejjii.",
+        "invendu": "{invendu} kilogrammes ko heddii."
+      }
+    },
+    "note": "Pulaar 'recolte' : 'nga' est du wolof, traduction à fournir."
+  }
+}

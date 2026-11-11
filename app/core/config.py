@@ -68,6 +68,18 @@ class Reglages(BaseSettings):
     # Les réponses audio plus vieilles que ce nombre d'heures sont supprimées.
     duree_conservation_audio_heures: int = 24
 
+    # -----------------------------------------------------------------------
+    # Conseils agricoles
+    # -----------------------------------------------------------------------
+
+    # Base de conseils (modifiable sans toucher au code).
+    chemin_conseils: Path = DOSSIER_PROJET / "app" / "data" / "conseils.json"
+
+    # Journal des questions posées (une ligne JSON par question) : sert à
+    # repérer les questions restées sans réponse. Ne contient ni nom ni parcelle.
+    journaliser_questions: bool = True
+    chemin_journal_questions: Path = DOSSIER_PROJET / "logs" / "questions.jsonl"
+
     model_config = {"env_file": DOSSIER_PROJET / ".env", "extra": "ignore"}
 
     @property

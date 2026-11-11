@@ -1,287 +1,190 @@
-
 """
-Service temporaire de conseils agricoles.
+Service de conseils agricoles.
 
-Cette version utilise des mots-clés pour identifier le sujet
-de la question et retourner un conseil prédéfini.
+Les textes (conseils, mots-clés, réponses par défaut...) sont dans
+app/data/conseils.json : ils se modifient sans toucher à ce fichier.
 
-IMPORTANT :
-- Cette base est temporaire et sert uniquement pour le MVP / la démo.
-- Les conseils agricoles devront ensuite être remplacés par de
-  vraies données provenant de sources agronomiques fiables.
-- Les traductions Wolof et Pulaar doivent être validées par des
-  locuteurs natifs et des conseillers agricoles.
+Étapes pour répondre à une question :
+1. Si Django a envoyé les données de la parcelle et que la question les concerne
+   (ventes, récolte...), répondre avec ces données.
+2. Sinon, chercher le sujet de la question par mots-clés (mots entiers, sans
+   accents) : le sujet qui reconnaît le plus de mots de la question gagne.
+3. Sinon, réponse par défaut.
+
+Chaque question est notée dans le journal des questions (logs/questions.jsonl)
+pour repérer celles qui restent sans réponse.
 """
 
+import json
 import logging
 import re
+import string
+import threading
+import unicodedata
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from functools import lru_cache
+
+from pydantic import BaseModel, model_validator
+
+from app.core.config import reglages
 
 journal = logging.getLogger(__name__)
 
 
 # ============================================================
-# CONSEILS AGRICOLES TEMPORAIRES
+# FORMAT DE LA BASE DE CONSEILS (validé au chargement)
 # ============================================================
 
-CONSEILS = {
-    "wolof": [
-        # ----------------------------------------------------
-        # ARACHIDE
-        # ----------------------------------------------------
-        (
-            ["gerte", "gerte yi", "arachide"],
-            (
-                "Bu ngay ji gerte, seet bu baax ne suuf si set na te am na tooy. "
-                "Tàmbali ji bi gannaaw bu taw bi tàmbalee bu baax."
-            ),
-        ),
+class Sujet(BaseModel):
+    id: str
+    mots_cles: dict[str, list[str]]  # langue (ou "commun") -> mots-clés
+    conseils: dict[str, str]          # langue -> conseil
+    source: str = ""
+    valide: bool = False
+    note: str = ""
 
-        # ----------------------------------------------------
-        # MIL
-        # ----------------------------------------------------
-        (
-            ["dugub", "dugub yi", "mil"],
-            (
-                "Bu ngay ji dugub, xool ne suuf si tooy na bu baax. "
-                "Bul ji ci suuf bu wow lool, te seet xaalis bi gannaaw taw."
-            ),
-        ),
 
-        # ----------------------------------------------------
-        # EAU / IRRIGATION
-        # ----------------------------------------------------
-        (
-            ["ndox", "wisal", "ndox mi", "taw", "taw bi"],
-            (
-                "Wisal sa tool ci suba walla ci ngoon, waaye xool xaalu suuf si "
-                "ba noppi bañ a def ndox bu ëpp. Bu tawee, xool ndox bi ci tool bi."
-            ),
-        ),
+class DonneesParcelle(BaseModel):
+    mots_cles: dict[str, list[str]]          # type de question -> mots-clés
+    reponses: dict[str, dict[str, str]]      # type de question -> langue -> modèle de phrase
+    resume: dict[str, dict[str, str]] = {}   # langue -> information -> modèle de phrase
 
-        # ----------------------------------------------------
-        # SOL
-        # ----------------------------------------------------
-        (
-            ["suuf", "suuf si", "sol", "ph"],
-            (
-                "Xool xaalu suuf si bu njëkk. Tooy, pH ak ay nutriments "
-                "mën nañu soppi ni ngay doxale sa culture."
-            ),
-        ),
 
-        # ----------------------------------------------------
-        # MALADIES
-        # ----------------------------------------------------
-        (
-            ["feebar", "feebar bi", "maladie", "maladi", "wérul"],
-            (
-                "Bu nga gis feebar ci sa mbey, jël nataal bu leer te xool "
-                "xob yi, garab yi ak coppite yi ci plant bi avant a def ay traitement."
-            ),
-        ),
+# Valeurs utilisables dans les phrases de "donnees_parcelle" : {vendu}, {culture}...
+VALEURS_PARCELLE = ("id", "culture", "type_sol", "humidite", "rendement", "vendu", "invendu", "recolte")
 
-        # ----------------------------------------------------
-        # RAVAGEURS / INSECTES
-        # ----------------------------------------------------
-        (
-            ["jëf", "jëf yi", "insect", "insectes", "mboy", "ravageur"],
-            (
-                "Bu nga gis ay insectes ci sa culture, xool fu ñu bari ak "
-                "ni ñuy yàq plant yi. Nataal bu leer mën na dimbali ngir seetlu leen."
-            ),
-        ),
 
-        # ----------------------------------------------------
-        # ENGRAIS / NUTRIMENTS
-        # ----------------------------------------------------
-        (
-            ["engrais", "fertilisant", "nutriment", "azote", "phosphore", "potassium"],
-            (
-                "Bul def engrais ci xel rekk. Xam xaalu suuf si moo gën a baax "
-                "ngir xam li culture bi soxla. Bu amee analyse du suuf, jëfandikoo ko."
-            ),
-        ),
+def champs_du_modele(modele: str) -> list[str]:
+    """'{vendu} kg sur {id}' -> ['vendu', 'id']"""
+    return [champ for _, champ, _, _ in string.Formatter().parse(modele) if champ]
 
-        # ----------------------------------------------------
-        # SEMIS
-        # ----------------------------------------------------
-        (
-            ["ji", "semis", "jiitu", "ji bi"],
-            (
-                "Bu ngay ji, xool taw yi ak xaalu suuf si. Suuf bi war na am "
-                "tooy bu doy ngir graines yi man a tàmbali."
-            ),
-        ),
 
-        # ----------------------------------------------------
-        # RECOLTE
-        # ----------------------------------------------------
-        (
-            ["récolte", "recolte", "njël", "njël bi", "dund"],
-            (
-                "Bu ñuy jeexal culture, xool màggug plant bi ak xaalam. "
-                "Tànnal waxtu bu baax ngir récolte bi te aar produit yi."
-            ),
-        ),
+class BaseConseils(BaseModel):
+    sujets: list[Sujet]
+    reponses_par_defaut: dict[str, str]
+    donnees_parcelle: DonneesParcelle
 
-        # ----------------------------------------------------
-        # TOMATE / LEGUMES
-        # ----------------------------------------------------
-        (
-            ["tomate", "tomaat", "legume", "légume", "poivron", "oignon"],
-            (
-                "Ci légumes yi, seet suuf si, ndox mi ak xaalu xob yi saa su nekk. "
-                "Bu nga gis coppite bu doy waar, jël nataal ngir xool ko."
-            ),
-        ),
+    @model_validator(mode="after")
+    def verifier_ids_uniques(self):
+        ids = [sujet.id for sujet in self.sujets]
+        doublons = {i for i in ids if ids.count(i) > 1}
+        if doublons:
+            raise ValueError(f"identifiants de sujet en double : {sorted(doublons)}")
 
-        # ----------------------------------------------------
-        # METEO / PLUIE
-        # ----------------------------------------------------
-        (
-            ["meteo", "météo", "taw", "taw bi", "taw yi", "weer"],
-            (
-                "Xool xaalu taw yi ak météo laata ngay ji, wisal walla def traitement. "
-                "Xibaaru météo mën na dimbali la ngir gën a tëral sa mbey."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # CONSEIL GENERAL AGRICULTEUR
-        # ----------------------------------------------------
-        (
-            ["tool", "mbay", "culture", "mbey", "parcelle"],
-            (
-                "Ngir gën a doxal sa mbey, xool suuf, ndox, météo ak xaalu culture bi. "
-                "Données yu jóge ci sa parcelle mën nañu dimbali la ci ay décisions yu gën a baax."
-            ),
-        ),
-    ],
-
-    "pulaar": [
-        # ----------------------------------------------------
-        # EAU
-        # ----------------------------------------------------
-        (
-            ["ndiyam", "ndiyam maa", "ndiyam e"],
-            (
-                "Hoto ndiyam e gese maa subaka walla kikiiɗe. "
-                "Hoto waɗa ndiyam ɗuɗɗum, ngam leydi maa waawi waasde."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # CHAMP / CULTURE
-        # ----------------------------------------------------
-        (
-            ["lesdi", "leydi", "ngesa", "mbay", "culture"],
-            (
-                "Ɗaɓɓu xaalu leydi maa, ndiyam e ɗaɓɓude culture maa. "
-                "Ɗee kabaruuji mbaawi wallude maa e cuɓagol moƴƴere."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # MIL
-        # ----------------------------------------------------
-        (
-            ["dugub", "milt", "mil"],
-            (
-                "So a waɗa dugub, ƴeewto leydi e ndiyam ndee. "
-                "Waɗ semis nde taw e xaalu leydi maa moƴƴi."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # ARACHIDE
-        # ----------------------------------------------------
-        (
-            ["gerte", "arachide"],
-            (
-                "So a waɗa gerte, ƴeewto leydi e ndiyam. "
-                "Ɓeydude semis e waqtu moƴƴi waawi wallude culture maa."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # MALADIE
-        # ----------------------------------------------------
-        (
-            ["feebre", "feebar", "maladie", "maladi"],
-            (
-                "So a yiyii feebre e culture maa, ƴeewto ɗe ngesa e leaf ɗe. "
-                "Naatnu foto moƴƴo ngam ƴeewtagol feebre ndee."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # INSECTES
-        # ----------------------------------------------------
-        (
-            ["insect", "insectes", "ravageur"],
-            (
-                "So a yiyii insectes e ngesa maa, ƴeewto ɗo ɓe heɓi e no ɓe bonniri "
-                "culture maa. Foto waawi wallude e ƴeewtagol."
-            ),
-        ),
-
-        # ----------------------------------------------------
-        # SOL
-        # ----------------------------------------------------
-        (
-            ["suuf", "sol", "ph"],
-            (
-                "Ƴeewto xaalu leydi maa. Ɓeydude kabaruuji dow suuf, ndiyam "
-                "e nutriments mbaawi wallude e cuɓagol bonnude culture."
-            ),
-        ),
-    ],
-}
+        modeles = [m for par_langue in self.donnees_parcelle.reponses.values() for m in par_langue.values()]
+        modeles += [m for par_info in self.donnees_parcelle.resume.values() for m in par_info.values()]
+        for modele in modeles:
+            inconnus = set(champs_du_modele(modele)) - set(VALEURS_PARCELLE)
+            if inconnus:
+                raise ValueError(
+                    f"valeur inconnue {sorted(inconnus)} dans la phrase {modele!r} "
+                    f"(valeurs possibles : {', '.join(VALEURS_PARCELLE)})"
+                )
+        return self
 
 
 # ============================================================
-# REPONSES PAR DEFAUT
+# NORMALISATION ET MOTS-CLES
 # ============================================================
 
-REPONSES_PAR_DEFAUT = {
-    "wolof": (
-        "Jërëjëf ci sa laaj. Léegi, man naa dimbali la ci suuf, ndox, "
-        "culture, feebar, insectes walla météo. Wax ma lu ngay jàngale "
-        "ci sa tool ngir ma gën a dimbali la."
-    ),
-
-    "pulaar": (
-        "A jaaraama e naamnal maa. Mi waawi wallude maa e leydi, ndiyam, "
-        "culture, feebre, insectes walla météo. Haaldu-mi ko wonde e ngesa maa "
-        "ngam mi wallu maa ɓurɗo."
-    ),
-}
-
-
-# ============================================================
-# NORMALISATION
-# ============================================================
-
-def normaliser_question(question: str) -> str:
+def normaliser_texte(texte: str) -> str:
     """
-    Nettoie légèrement la question avant la recherche.
+    Minuscules, sans accents, sans ponctuation, espaces uniques.
+    "Récolté, l'Arachide ?" -> "recolte l arachide"
+    Les lettres propres au pulaar/wolof (ɓ, ɗ, ƴ, ŋ) sont conservées.
     """
+    texte = unicodedata.normalize("NFD", texte.lower())
+    texte = "".join(c for c in texte if unicodedata.category(c) != "Mn")
+    texte = re.sub(r"[^\w\s]", " ", texte)
+    return " ".join(texte.split())
 
-    question = question.lower().strip()
 
-    # Remplace les espaces multiples
-    question = re.sub(r"\s+", " ", question)
+@dataclass(frozen=True)
+class MotCle:
+    texte: str
+    motif: re.Pattern
 
-    return question
+
+def compiler_mot_cle(mot_cle: str) -> MotCle:
+    """'recolt*' -> mot commençant par 'recolt' ; 'mil' -> le mot 'mil' exactement."""
+    prefixe = mot_cle.endswith("*")
+    texte = normaliser_texte(mot_cle.rstrip("*"))
+    motif = r"(?<!\S)" + re.escape(texte) + ("" if prefixe else r"(?!\S)")
+    return MotCle(texte=mot_cle, motif=re.compile(motif))
+
+
+def mots_cles_trouves(mots_cles: list[MotCle], question_normalisee: str) -> list[str]:
+    return [mc.texte for mc in mots_cles if mc.motif.search(question_normalisee)]
+
+
+def score(mots_cles: list[MotCle], question_normalisee: str) -> int:
+    """
+    Nombre de mots de la question reconnus par ces mots-clés.
+    Un même mot n'est compté qu'une fois ("semer" trouvé par "semer" ET "seme*" = 1).
+    """
+    positions = {
+        trouve.start()
+        for mc in mots_cles
+        for trouve in mc.motif.finditer(question_normalisee)
+    }
+    return len(positions)
+
+
+# ============================================================
+# CHARGEMENT DE LA BASE
+# ============================================================
+
+@dataclass(frozen=True)
+class SujetCompile:
+    id: str
+    mots_cles: dict[str, list[MotCle]]  # langue -> mots-clés (langue + commun)
+    conseils: dict[str, str]
+
+
+@dataclass(frozen=True)
+class BaseCompilee:
+    sujets: list[SujetCompile]
+    reponses_par_defaut: dict[str, str]
+    donnees_parcelle: DonneesParcelle
+    mots_cles_parcelle: dict[str, list[MotCle]]
+
+
+def lire_base(chemin=None) -> BaseConseils:
+    """Lit et valide le fichier JSON (lève une erreur claire s'il est mal formé)."""
+    chemin = chemin or reglages.chemin_conseils
+    return BaseConseils.model_validate_json(chemin.read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=1)
+def charger_base() -> BaseCompilee:
+    base = lire_base()
+    sujets = []
+    for sujet in base.sujets:
+        communs = sujet.mots_cles.get("commun", [])
+        par_langue = {
+            langue: [compiler_mot_cle(m) for m in sujet.mots_cles.get(langue, []) + communs]
+            for langue in sujet.conseils
+        }
+        sujets.append(SujetCompile(id=sujet.id, mots_cles=par_langue, conseils=sujet.conseils))
+
+    mots_cles_parcelle = {
+        type_question: [compiler_mot_cle(m) for m in mots]
+        for type_question, mots in base.donnees_parcelle.mots_cles.items()
+    }
+    journal.info("Base de conseils chargée : %d sujets.", len(sujets))
+    return BaseCompilee(sujets, base.reponses_par_defaut, base.donnees_parcelle, mots_cles_parcelle)
+
+
+def recharger_base() -> BaseCompilee:
+    """Relit conseils.json (après une modification, sans redémarrer)."""
+    charger_base.cache_clear()
+    return charger_base()
 
 
 # ============================================================
 # REPONSES BASEES SUR LES DONNEES DE LA PARCELLE
 # ============================================================
-
-MOTS_VENTE = ["jaay", "vend", "vente"]
-MOTS_RECOLTE = ["recolt", "récolt"]
-
 
 def _section(contexte: dict, cle: str) -> dict:
     """Retourne une section du contexte, ou {} si elle est absente ou mal formée."""
@@ -296,57 +199,46 @@ def _nombre(valeur):
     return valeur
 
 
-def _repondre_avec_contexte(question: str, langue: str, contexte: dict) -> str | None:
-    """
-    Répond à partir des données envoyées par Django (parcelle, sol, ventes...).
-    Retourne None si la question ne concerne pas ces données.
-
-    TODO : phrases à faire valider par des locuteurs natifs.
-    """
+def _valeurs_parcelle(contexte: dict) -> dict:
+    """Extrait les valeurs utiles du contexte envoyé par Django (None si absentes)."""
     parcelle = _section(contexte, "parcelle")
     sol = _section(contexte, "sol")
     production = _section(contexte, "production")
     ventes = _section(contexte, "ventes")
+    return {
+        "id": parcelle.get("id", ""),
+        "culture": parcelle.get("culture"),
+        "type_sol": parcelle.get("type_sol"),
+        "humidite": _nombre(sol.get("humidite_pct")),
+        "rendement": _nombre(production.get("rendement_moyen")),
+        "vendu": _nombre(ventes.get("vendu_total_kg")),
+        "invendu": _nombre(ventes.get("invendu_total_kg")),
+        "recolte": _nombre(ventes.get("recolte_total_kg")),
+    }
 
-    vendu = _nombre(ventes.get("vendu_total_kg"))
-    invendu = _nombre(ventes.get("invendu_total_kg"))
-    recolte = _nombre(ventes.get("recolte_total_kg"))
 
-    # Questions sur les ventes
-    if vendu is not None and any(mot in question for mot in MOTS_VENTE):
-        if langue == "wolof":
-            return f"Ci sa parcelle, {vendu} kilogrammes nga jaay."
-        if langue == "pulaar":
-            return f"Parcelle maa, {vendu} kilogrammes a yejjii."
+def _repondre_avec_contexte(question: str, langue: str, contexte: dict) -> tuple[str, str] | None:
+    """Retourne (type_de_reponse, texte) ou None si la question ne concerne pas les données."""
+    base = charger_base()
+    donnees = base.donnees_parcelle
+    valeurs = _valeurs_parcelle(contexte)
 
-    # Questions sur la récolte
-    if recolte is not None and any(mot in question for mot in MOTS_RECOLTE):
-        if langue == "wolof":
-            return f"Ci sa parcelle, {recolte} kilogrammes nga récolte."
-        if langue == "pulaar":
-            # TODO : "nga" est du wolof, traduction pulaar à fournir.
-            return f"Parcelle maa, {recolte} kilogrammes nga récolte."
+    def complet(modele: str) -> bool:
+        """Toutes les valeurs dont la phrase a besoin sont connues."""
+        return all(valeurs.get(champ) is not None for champ in champs_du_modele(modele))
 
-    # Résumé général de la parcelle (pulaar uniquement pour l'instant).
-    # Seules les informations réellement connues sont lues.
-    if langue == "pulaar" and parcelle:
-        morceaux = []
-        if parcelle.get("culture"):
-            morceaux.append(f"Parcelle maa {parcelle.get('id', '')} woni {parcelle['culture']}.")
-        if parcelle.get("type_sol"):
-            morceaux.append(f"Leydi maa ko {parcelle['type_sol']}.")
-        humidite = _nombre(sol.get("humidite_pct"))
-        if humidite is not None:
-            morceaux.append(f"Tooyugol leydi maa ko {humidite} pour cent.")
-        rendement = _nombre(production.get("rendement_moyen"))
-        if rendement is not None:
-            morceaux.append(f"Rendement maa ko {rendement} tonnes e hectare.")
-        if vendu is not None:
-            morceaux.append(f"{vendu} kilogrammes ɓe yejjii.")
-        if invendu is not None:
-            morceaux.append(f"{invendu} kilogrammes ko heddii.")
+    # Questions précises : ventes, récolte...
+    for type_question, mots_cles in base.mots_cles_parcelle.items():
+        modele = donnees.reponses.get(type_question, {}).get(langue)
+        if modele and complet(modele) and mots_cles_trouves(mots_cles, question):
+            return f"parcelle:{type_question}", modele.format(**valeurs)
+
+    # Résumé général : seules les phrases dont les valeurs sont connues sont lues.
+    modeles_resume = donnees.resume.get(langue)
+    if modeles_resume and _section(contexte, "parcelle"):
+        morceaux = [modele.format(**valeurs) for modele in modeles_resume.values() if complet(modele)]
         if morceaux:
-            return " ".join(morceaux)
+            return "parcelle:resume", " ".join(morceaux)
 
     return None
 
@@ -355,37 +247,67 @@ def _repondre_avec_contexte(question: str, langue: str, contexte: dict) -> str |
 # RECHERCHE DU CONSEIL
 # ============================================================
 
-def trouver_conseil(question: str, langue: str, contexte: dict | None = None) -> str:
+def analyser_question(question: str, langue: str, contexte: dict | None = None) -> tuple[str | None, str]:
     """
-    Retourne un conseil agricole temporaire dans la langue
-    demandée.
-
-    La recherche se fait actuellement par mots-clés.
-
-    Cette fonction sera remplacée plus tard par une recherche
-    dans la vraie base de connaissances agricoles / RAG.
+    Retourne (identifiant_du_sujet, reponse).
+    L'identifiant vaut None quand aucun sujet n'a été reconnu (réponse par défaut).
     """
+    base = charger_base()
+    question_normalisee = normaliser_texte(question)
 
-    question = normaliser_question(question)
-    journal.debug("Question reçue (%s) : %r", langue, question)
-
-    # Si un contexte de parcelle est fourni, essayer d'abord de répondre
-    # directement avec les données de l'agriculteur.
+    # 1. Données de la parcelle
     if isinstance(contexte, dict):
-        reponse = _repondre_avec_contexte(question, langue, contexte)
-        if reponse:
-            return reponse
+        resultat = _repondre_avec_contexte(question_normalisee, langue, contexte)
+        if resultat:
+            return resultat
 
-    conseils_langue = CONSEILS.get(langue, [])
+    # 2. Sujet ayant le plus de mots-clés trouvés (à égalité : le premier de la liste)
+    meilleur, meilleur_score = None, 0
+    for sujet in base.sujets:
+        if langue not in sujet.conseils:
+            continue
+        points = score(sujet.mots_cles[langue], question_normalisee)
+        if points > meilleur_score:
+            meilleur, meilleur_score = sujet, points
+    if meilleur:
+        return meilleur.id, meilleur.conseils[langue]
 
-    # Recherche des mots-clés
-    for mots_cles, conseil in conseils_langue:
-        for mot in mots_cles:
-            if mot.lower() in question:
-                return conseil
-
-    # Aucun sujet reconnu
-    return REPONSES_PAR_DEFAUT.get(
-        langue,
-        "Désolé, je ne peux pas encore répondre à cette question."
+    # 3. Réponse par défaut
+    return None, base.reponses_par_defaut.get(
+        langue, "Désolé, je ne peux pas encore répondre à cette question."
     )
+
+
+def trouver_conseil(question: str, langue: str, contexte: dict | None = None) -> str:
+    """Retourne le conseil agricole dans la langue demandée et note la question au journal."""
+    sujet, reponse = analyser_question(question, langue, contexte)
+    journal.debug("Question (%s) -> sujet %s", langue, sujet)
+    journaliser_question(question, langue, sujet, avec_contexte=isinstance(contexte, dict))
+    return reponse
+
+
+# ============================================================
+# JOURNAL DES QUESTIONS
+# ============================================================
+
+_verrou_journal = threading.Lock()
+
+
+def journaliser_question(question: str, langue: str, sujet: str | None, avec_contexte: bool) -> None:
+    """Ajoute une ligne au journal. Une erreur d'écriture ne bloque jamais la réponse."""
+    if not reglages.journaliser_questions:
+        return
+    ligne = {
+        "date": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "langue": langue,
+        "question": question,
+        "sujet": sujet,
+        "contexte": avec_contexte,
+    }
+    try:
+        chemin = reglages.chemin_journal_questions
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        with _verrou_journal, chemin.open("a", encoding="utf-8") as fichier:
+            fichier.write(json.dumps(ligne, ensure_ascii=False) + "\n")
+    except OSError:
+        journal.exception("Impossible d'écrire dans le journal des questions")

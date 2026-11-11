@@ -11,3 +11,6 @@ __pycache__/
 audio/
 env
 
+
+# Journal des questions posées (données des utilisateurs)
+logs/

@@ -121,3 +121,29 @@ sudo systemctl enable --now agroviavoice
 | `FFMPEG_NOT_FOUND` | `sudo apt install ffmpeg` |
 | Service tué au démarrage (OOM) | Plusieurs workers, ou autre programme gourmand : `free -h` |
 | Transcription lente | Normal sur CPU (~1x temps réel). `ASR_BEAM_SIZE=1`, `NOMBRE_THREADS=4` |
+
+---
+
+## Modifier les conseils agricoles
+
+Les conseils, mots-clés et réponses sont dans `app/data/conseils.json` (les règles
+d'écriture sont en haut du fichier). Pas besoin de toucher au code Python.
+
+```bash
+nano app/data/conseils.json
+python -m scripts.verifier_conseils                                   # format, couverture, notes
+python -m scripts.verifier_conseils --tester "ñaata laay jaay" wolof   # quel sujet est choisi ?
+sudo systemctl restart sama-agrivoice
+```
+
+Si le fichier est mal formé, le service refuse de démarrer et l'erreur
+s'affiche dans `journalctl -u sama-agrivoice`.
+
+## Voir ce que demandent les agriculteurs
+
+Chaque question est notée dans `logs/questions.jsonl` (question, langue, sujet trouvé ;
+ni nom ni données de parcelle). Pour savoir quels conseils écrire en priorité :
+
+```bash
+python -m scripts.questions_sans_reponse --jours 30
+```

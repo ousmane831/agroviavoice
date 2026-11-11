@@ -15,6 +15,7 @@ def dossiers_temporaires(tmp_path, monkeypatch):
     monkeypatch.setattr(reglages, "dossier_audio_entree", tmp_path / "input")
     monkeypatch.setattr(reglages, "dossier_audio_sortie", tmp_path / "output")
     monkeypatch.setattr(reglages, "dossier_modeles", tmp_path / "models")
+    monkeypatch.setattr(reglages, "chemin_journal_questions", tmp_path / "logs" / "questions.jsonl")
 
 
 def creer_wav(tmp_path, secondes=1.0, frequence=44100, volume=0.5) -> bytes:
