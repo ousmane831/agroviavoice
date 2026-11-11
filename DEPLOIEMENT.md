@@ -28,8 +28,8 @@ sudo apt install -y ffmpeg python3.12-venv libsndfile1
 ```bash
 cd /var/www/agroviavoice
 git pull
-python3.12 -m venv venv          # si le venv n'existe pas encore
-source venv/bin/activate
+python3.12 -m venv env           # si le venv n'existe pas encore
+source env/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -96,7 +96,7 @@ After=network.target
 [Service]
 User=ubuntu
 WorkingDirectory=/var/www/agroviavoice
-ExecStart=/var/www/agroviavoice/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
+ExecStart=/var/www/agroviavoice/env/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001 --workers 1
 Restart=always
 # Le chargement des modèles prend ~1 minute au démarrage
 TimeoutStartSec=300
