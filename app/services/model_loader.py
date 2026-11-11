@@ -188,8 +188,11 @@ def precharger_modeles() -> None:
     for cle, chargeur in a_charger:
         try:
             _obtenir(cle, chargeur)
-        except Exception as erreur:
-            journal.error("Modèle %s non chargé : %s", cle, getattr(erreur, "message", erreur))
+        except ErreurApp as erreur:
+            journal.error("Modèle %s non chargé : %s", cle, erreur.message)
+        except Exception:
+            # Erreur inattendue (dépendance manquante...) : trace complète dans les logs.
+            journal.exception("Modèle %s non chargé", cle)
 
 
 def etat_modeles() -> dict:

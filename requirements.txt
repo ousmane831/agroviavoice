@@ -26,6 +26,8 @@ ctranslate2>=4.4,<5
 torch==2.8.0
 torchaudio==2.8.0
 coqui-tts==0.28.0
+# Utilisé par une dépendance de coqui-tts sans être déclaré : à installer soi-même.
+six>=1.16
 # transformers sert aussi à convertir le modèle ASR (scripts/telecharger_modeles.py)
 transformers>=4.57,<5
 huggingface_hub>=0.36
